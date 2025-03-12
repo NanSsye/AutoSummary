@@ -1,6 +1,5 @@
 # 🎉 XYBotV2 自动总结插件 (AutoSummary) 🎉
 
-![AutoSummary Plugin Logo](你的插件Logo图片链接，可选)
 
 快速总结文本内容和卡片消息，让你的 XYBotV2 瞬间变身效率助手！🚀
 
