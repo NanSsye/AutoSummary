@@ -116,9 +116,8 @@ white_list = []  # 白名单URL，为空则允许所有非黑名单URL
 
 如果您有任何问题、建议或想参与插件开发，欢迎通过以下方式联系作者：
 
-* [你的 GitHub 仓库地址](https://www.google.com/url?sa=E&source=gmail&q=%E4%BD%A0%E7%9A%84GitHub%E4%BB%93%E5%BA%93%E5%9C%B0%E5%9D%80)
-* [你的邮箱地址](https://www.google.com/url?sa=E&source=gmail&q=%E4%BD%A0%E7%9A%84%E9%82%AE%E7%AE%B1%E5%9C%B0%E5%9D%80)
-* [其他联系方式]
+* [你的 GitHub 仓库地址](https://github.com/NanSsye)
+
 
 感谢您的使用！⭐
 
