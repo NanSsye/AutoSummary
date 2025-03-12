@@ -3,6 +3,8 @@
 
 快速总结文本内容和卡片消息，让你的 XYBotV2 瞬间变身效率助手！🚀
 
+<img src="https://github.com/user-attachments/assets/a2627960-69d8-400d-903c-309dbeadf125" width="400" height="600">
+
 ## ✍️ 插件描述
 
 `AutoSummary` 是一款为 XYBotV2 设计的插件，旨在帮助用户**快速总结**微信聊天中的**文本内容**和**卡片消息**。它能够：
