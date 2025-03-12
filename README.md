@@ -116,7 +116,7 @@ white_list = []  # 白名单URL，为空则允许所有非黑名单URL
 
 如果您有任何问题、建议或想参与插件开发，欢迎通过以下方式联系作者：
 
-* [你的 GitHub 仓库地址](https://github.com/NanSsye)
+* [仓库地址](https://github.com/NanSsye)
 
 
 感谢您的使用！⭐
