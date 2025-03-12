@@ -121,3 +121,8 @@ white_list = []  # 白名单URL，为空则允许所有非黑名单URL
 * [其他联系方式]
 
 感谢您的使用！⭐
+
+![2191ff9b71feb07cac70bf62123275b](https://github.com/user-attachments/assets/1e1b3e0f-fab8-4cc6-9011-3b0e8bf10737)
+
+![2191ff9b71feb07cac70bf62123275b](https://github.com/user-attachments/assets/7d673675-c804-4feb-bbef-ccba6a728e16)
+
