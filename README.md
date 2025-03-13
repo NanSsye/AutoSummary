@@ -37,7 +37,8 @@
 
 1. **下载插件**：将 `AutoSummary` 插件文件夹放入 XYBotV2 的 `plugins` 目录下。
 2. **配置插件**：修改 `plugins/AutoSummary/config.toml` 文件，填入您的 Dify API 相关配置以及其他自定义设置。
-3. **重启 XYBotV2**：重启您的 XYBotV2 机器人，插件即可生效。
+3. **替换文件**：替换xybot.py到/utils/xybot.py
+4. **重启 XYBotV2**：重启您的 XYBotV2 机器人，插件即可生效。
 
 ## ⚙️ 配置文件 (config.toml)
 
