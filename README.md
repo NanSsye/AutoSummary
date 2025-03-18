@@ -126,5 +126,11 @@ white_list = []  # 白名单URL，为空则允许所有非黑名单URL
 
 <img src="https://github.com/user-attachments/assets/1e1b3e0f-fab8-4cc6-9011-3b0e8bf10737" width="200" height="400">
 
+**给个 ⭐ Star 支持吧！** 😊
+
+**开源不易，感谢打赏支持！**
+
+![image](https://github.com/user-attachments/assets/2dde3b46-85a1-4f22-8a54-3928ef59b85f)
+
 
 
