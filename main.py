@@ -5,6 +5,7 @@ import asyncio
 import re
 import os
 import tomllib
+import time
 from loguru import logger
 from typing import Dict, Optional, TYPE_CHECKING
 import json
@@ -18,9 +19,11 @@ if TYPE_CHECKING:
 class AutoSummary(PluginBase):
     description = "自动总结文本内容和卡片消息"
     author = "老夏的金库"
-    version = "1.0.0"
+    version = "1.0.1"
 
     URL_PATTERN = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[-\w./?=&]*'
+    # 总结命令的触发词
+    SUMMARY_TRIGGERS = ["总结", "总结链接", "总结内容", "总结一下", "帮我总结", "summarize"]
 
     def __init__(self):
         super().__init__()
@@ -41,6 +44,12 @@ class AutoSummary(PluginBase):
         self.max_text_length = settings.get("max_text_length", 8000)
         self.black_list = settings.get("black_list", [])
         self.white_list = settings.get("white_list", [])
+
+        # 存储最近的链接和卡片信息
+        self.recent_urls = {}  # 格式: {chat_id: {"url": url, "timestamp": timestamp}}
+        self.recent_cards = {}  # 格式: {chat_id: {"info": card_info, "timestamp": timestamp}}
+        # 链接和卡片的过期时间（秒）
+        self.expiration_time = 300  # 5分钟
 
         self.http_session = aiohttp.ClientSession()
 
@@ -63,35 +72,56 @@ class AutoSummary(PluginBase):
             return False
         return True
 
+    # 检查是否是总结命令
+    def _is_summary_command(self, content: str) -> bool:
+        content = content.strip().lower()
+        return any(trigger in content for trigger in self.SUMMARY_TRIGGERS)
+
+    # 清理过期的链接和卡片
+    def _clean_expired_items(self):
+        current_time = time.time()
+        # 清理过期的URL
+        for chat_id in list(self.recent_urls.keys()):
+            if current_time - self.recent_urls[chat_id]["timestamp"] > self.expiration_time:
+                del self.recent_urls[chat_id]
+
+        # 清理过期的卡片
+        for chat_id in list(self.recent_cards.keys()):
+            if current_time - self.recent_cards[chat_id]["timestamp"] > self.expiration_time:
+                del self.recent_cards[chat_id]
+
     async def _fetch_url_content(self, url: str) -> Optional[str]:
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
             }
-            # 添加超时设置
-            timeout = aiohttp.ClientTimeout(total=30)  # 30秒总超时
+            # 设置超时参数，但不使用上下文管理器
+            timeout_seconds = 30
 
             # 获取原始URL并处理重定向
-            async with self.http_session.get(url, headers=headers, allow_redirects=True, timeout=timeout) as response:
-                if response.status != 200:
-                    logger.error(f"获取初始URL失败: {response.status}, URL: {url}")
-                    return None
-                final_url = str(response.url)
-                logger.info(f"重定向后的URL: {final_url}")
+            try:
+                async with self.http_session.get(url, headers=headers, allow_redirects=True, timeout=timeout_seconds) as response:
+                    if response.status != 200:
+                        logger.error(f"获取初始URL失败: {response.status}, URL: {url}")
+                        return None
+                    final_url = str(response.url)
+                    logger.info(f"重定向后的URL: {final_url}")
 
-                # 尝试直接获取内容
-                try:
-                    content = await response.text()
-                    if content and len(content) > 500:  # 确保内容有足够长度
-                        logger.info(f"直接从URL获取内容成功: {url}, 内容长度: {len(content)}")
-                        return content
-                except Exception as e:
-                    logger.warning(f"直接获取内容失败: {e}, 尝试使用Jina AI")
+                    # 尝试直接获取内容
+                    try:
+                        content = await response.text()
+                        if content and len(content) > 500:  # 确保内容有足够长度
+                            logger.info(f"直接从URL获取内容成功: {url}, 内容长度: {len(content)}")
+                            return content
+                    except Exception as e:
+                        logger.warning(f"直接获取内容失败: {e}, 尝试使用Jina AI")
+            except asyncio.TimeoutError:
+                logger.warning(f"获取URL超时: {url}, 尝试使用Jina AI")
 
             # 如果直接获取失败或内容太短，尝试使用Jina AI
             try:
-                jina_url = f"https://r.jina.ai/{final_url}"
-                async with self.http_session.get(jina_url, headers=headers, timeout=timeout) as jina_response:
+                jina_url = f"https://r.jina.ai/{url}"
+                async with self.http_session.get(jina_url, headers=headers, timeout=timeout_seconds) as jina_response:
                     if jina_response.status == 200:
                         content = await jina_response.text()
                         logger.info(f"从 Jina AI 获取内容成功: {jina_url}, 内容长度: {len(content)}")
@@ -102,7 +132,7 @@ class AutoSummary(PluginBase):
                 logger.error(f"使用Jina AI获取内容失败: {e}")
 
             # 尝试使用备用方法直接获取
-            return await self._fetch_url_content_direct(final_url)
+            return await self._fetch_url_content_direct(url)
         except asyncio.TimeoutError:
             logger.error(f"获取URL内容超时: URL: {url}")
             return None
@@ -116,9 +146,9 @@ class AutoSummary(PluginBase):
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
             }
-            timeout = aiohttp.ClientTimeout(total=30)
+            timeout_seconds = 30
 
-            async with self.http_session.get(url, headers=headers, timeout=timeout) as response:
+            async with self.http_session.get(url, headers=headers, timeout=timeout_seconds) as response:
                 if response.status != 200:
                     return None
 
@@ -343,18 +373,26 @@ class AutoSummary(PluginBase):
         chat_id = message.get("FromWxid", "")
 
         logger.info(f"收到文本消息: chat_id={chat_id}, content={content[:100]}...")
-
         content = html.unescape(content)
-        urls = re.findall(self.URL_PATTERN, content)
-        if urls:
-            url = urls[0]
-            logger.info(f"找到URL: {url}")
-            if self._check_url(url):
+
+        # 清理过期的链接和卡片
+        self._clean_expired_items()
+
+        # 检查是否是总结命令
+        if self._is_summary_command(content):
+            logger.info(f"检测到总结命令: {content}")
+
+            # 检查是否有最近的URL
+            if chat_id in self.recent_urls:
+                url = self.recent_urls[chat_id]["url"]
+                logger.info(f"开始总结最近的URL: {url}")
                 try:
                     await bot.send_text_message(chat_id, "🔍 正在为您生成内容总结，请稍候...")
                     summary = await self._process_url(url)
                     if summary:
                         await bot.send_text_message(chat_id, f"🎯 内容总结如下：\n\n{summary}")
+                        # 总结后删除该URL
+                        del self.recent_urls[chat_id]
                         return False
                     else:
                         await bot.send_text_message(chat_id, "❌ 抱歉，生成总结失败")
@@ -363,6 +401,61 @@ class AutoSummary(PluginBase):
                     logger.error(f"处理URL时出错: {e}")
                     await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中出现错误")
                     return False
+
+            # 检查是否有最近的卡片
+            elif chat_id in self.recent_cards:
+                card_info = self.recent_cards[chat_id]["info"]
+                logger.info(f"开始总结最近的卡片: {card_info['title']}")
+                try:
+                    # 处理卡片消息
+                    await self._handle_card_message(bot, chat_id, card_info)
+                    # 总结后删除该卡片
+                    del self.recent_cards[chat_id]
+                    return False
+                except Exception as e:
+                    logger.error(f"处理卡片时出错: {e}")
+                    await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中出现错误")
+                    return False
+
+            # 没有最近的URL或卡片
+            else:
+                # 检查消息中是否包含URL
+                urls = re.findall(self.URL_PATTERN, content)
+                if urls:
+                    url = urls[0]
+                    logger.info(f"在总结命令中找到URL: {url}")
+                    if self._check_url(url):
+                        try:
+                            await bot.send_text_message(chat_id, "🔍 正在为您生成内容总结，请稍候...")
+                            summary = await self._process_url(url)
+                            if summary:
+                                await bot.send_text_message(chat_id, f"🎯 内容总结如下：\n\n{summary}")
+                                return False
+                            else:
+                                await bot.send_text_message(chat_id, "❌ 抱歉，生成总结失败")
+                                return False
+                        except Exception as e:
+                            logger.error(f"处理URL时出错: {e}")
+                            await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中出现错误")
+                            return False
+                else:
+                    await bot.send_text_message(chat_id, "❌ 没有找到可以总结的链接或卡片，请先发送链接或卡片，然后再发送总结命令")
+                    return False
+
+        # 如果不是总结命令，检查是否包含URL
+        urls = re.findall(self.URL_PATTERN, content)
+        if urls:
+            url = urls[0]
+            logger.info(f"找到URL: {url}")
+            if self._check_url(url):
+                # 存储URL供后续使用
+                self.recent_urls[chat_id] = {
+                    "url": url,
+                    "timestamp": time.time()
+                }
+                logger.info(f"已存储URL: {url} 供后续总结使用")
+                await bot.send_text_message(chat_id, "🔗 检测到链接，发送\"总结\"命令可以生成内容总结")
+
         return True
 
     @on_article_message(priority=50)
@@ -382,10 +475,17 @@ class AutoSummary(PluginBase):
                 logger.warning("文章消息解析失败")
                 return True
 
-            logger.info(f"识别为文章消息，开始处理: {card_info['title']}")
+            logger.info(f"识别为文章消息: {card_info['title']}")
 
-            # 处理卡片消息
-            return await self._handle_card_message(bot, chat_id, card_info)
+            # 存储卡片信息供后续使用
+            self.recent_cards[chat_id] = {
+                "info": card_info,
+                "timestamp": time.time()
+            }
+            logger.info(f"已存储文章信息: {card_info['title']} 供后续总结使用")
+            await bot.send_text_message(chat_id, "📰 检测到文章，发送\"总结\"命令可以生成内容总结")
+
+            return True
         except Exception as e:
             logger.error(f"处理文章消息时出错: {e}")
             logger.exception(e)
@@ -414,10 +514,17 @@ class AutoSummary(PluginBase):
                 logger.warning("卡片消息解析失败")
                 return True
 
-            logger.info(f"识别为卡片消息，开始处理: {card_info['title']}")
+            logger.info(f"识别为卡片消息: {card_info['title']}")
 
-            # 处理卡片消息
-            return await self._handle_card_message(bot, chat_id, card_info)
+            # 存储卡片信息供后续使用
+            self.recent_cards[chat_id] = {
+                "info": card_info,
+                "timestamp": time.time()
+            }
+            logger.info(f"已存储卡片信息: {card_info['title']} 供后续总结使用")
+            await bot.send_text_message(chat_id, "📎 检测到卡片，发送\"总结\"命令可以生成内容总结")
+
+            return True
         except Exception as e:
             logger.error(f"处理文件消息时出错: {e}")
             logger.exception(e)
