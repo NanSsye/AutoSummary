@@ -23,7 +23,7 @@ class AutoSummary(PluginBase):
 
     URL_PATTERN = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[-\w./?=&]*'
     # 总结命令的触发词
-    SUMMARY_TRIGGERS = ["总结", "总结链接", "总结内容", "总结一下", "帮我总结", "summarize"]
+    SUMMARY_TRIGGERS = ["/总结", "/总结链接", "/总结内容", "/总结一下", "/帮我总结", "/summarize"]
 
     def __init__(self):
         super().__init__()
@@ -532,7 +532,7 @@ class AutoSummary(PluginBase):
                     "timestamp": time.time()
                 }
                 logger.info(f"已存储URL: {url} 供后续总结使用")
-                await bot.send_text_message(chat_id, "🔗 检测到链接，发送\"总结\"命令可以生成内容总结")
+                await bot.send_text_message(chat_id, "🔗 检测到链接，发送\"/总结\"命令可以生成内容总结")
 
         return True
 
@@ -561,7 +561,7 @@ class AutoSummary(PluginBase):
                 "timestamp": time.time()
             }
             logger.info(f"已存储文章信息: {card_info['title']} 供后续总结使用")
-            await bot.send_text_message(chat_id, "📰 检测到文章，发送\"总结\"命令可以生成内容总结")
+            await bot.send_text_message(chat_id, "📰 检测到文章，发送\"/总结\"命令可以生成内容总结")
 
             return True
         except Exception as e:
@@ -600,7 +600,7 @@ class AutoSummary(PluginBase):
                 "timestamp": time.time()
             }
             logger.info(f"已存储卡片信息: {card_info['title']} 供后续总结使用")
-            await bot.send_text_message(chat_id, "📎 检测到卡片，发送\"总结\"命令可以生成内容总结")
+            await bot.send_text_message(chat_id, "📎 检测到卡片，发送\"/总结\"命令可以生成内容总结")
 
             return True
         except Exception as e:
