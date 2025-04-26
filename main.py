@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class AutoSummary(PluginBase):
     description = "自动总结文本内容和卡片消息"
     author = "老夏的金库"
-    version = "1.0.1"
+    version = "1.1.0"
 
     URL_PATTERN = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[-\w./?=&]*'
     # 总结命令的触发词
@@ -95,44 +95,72 @@ class AutoSummary(PluginBase):
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
             }
-            # 设置超时参数，但不使用上下文管理器
-            timeout_seconds = 30
-
-            # 获取原始URL并处理重定向
+            # 不在顶层设置超时参数
+            
+            # 先检查是否有重定向，获取最终URL
+            final_url = url
             try:
-                async with self.http_session.get(url, headers=headers, allow_redirects=True, timeout=timeout_seconds) as response:
-                    if response.status != 200:
-                        logger.error(f"获取初始URL失败: {response.status}, URL: {url}")
-                        return None
-                    final_url = str(response.url)
-                    logger.info(f"重定向后的URL: {final_url}")
+                # 只发送HEAD请求来检查重定向，不获取实际内容
+                async def check_redirect():
+                    # 在任务中设置超时
+                    timeout = aiohttp.ClientTimeout(total=30)
+                    async with self.http_session.head(url, headers=headers, allow_redirects=True, timeout=timeout) as head_response:
+                        if head_response.status == 200:
+                            return str(head_response.url)
+                        return url
+                
+                final_url = await asyncio.create_task(check_redirect())
+                if final_url != url:
+                    logger.info(f"检测到重定向: {url} -> {final_url}")
+            except Exception as e:
+                logger.warning(f"检查重定向失败: {e}, 使用原始URL")
+                final_url = url
 
-                    # 尝试直接获取内容
-                    try:
-                        content = await response.text()
-                        if content and len(content) > 500:  # 确保内容有足够长度
-                            logger.info(f"直接从URL获取内容成功: {url}, 内容长度: {len(content)}")
+            # 使用 Jina AI 获取内容（使用最终URL）
+            logger.info(f"使用 Jina AI 获取内容: {final_url}")
+            try:
+                jina_url = f"https://r.jina.ai/{final_url}"
+                
+                async def get_jina_content():
+                    # 在任务中设置超时
+                    timeout = aiohttp.ClientTimeout(total=30)
+                    async with self.http_session.get(jina_url, headers=headers, timeout=timeout) as jina_response:
+                        if jina_response.status == 200:
+                            content = await jina_response.text()
                             return content
-                    except Exception as e:
-                        logger.warning(f"直接获取内容失败: {e}, 尝试使用Jina AI")
-            except asyncio.TimeoutError:
-                logger.warning(f"获取URL超时: {url}, 尝试使用Jina AI")
-
-            # 如果直接获取失败或内容太短，尝试使用Jina AI
-            try:
-                jina_url = f"https://r.jina.ai/{url}"
-                async with self.http_session.get(jina_url, headers=headers, timeout=timeout_seconds) as jina_response:
-                    if jina_response.status == 200:
-                        content = await jina_response.text()
-                        logger.info(f"从 Jina AI 获取内容成功: {jina_url}, 内容长度: {len(content)}")
-                        return content
-                    else:
-                        logger.error(f"从 Jina AI 获取内容失败: {jina_response.status}, URL: {jina_url}")
+                        return None
+                
+                content = await asyncio.create_task(get_jina_content())
+                if content:
+                    logger.info(f"从 Jina AI 获取内容成功: {jina_url}, 内容长度: {len(content)}")
+                    return content
+                else:
+                    logger.error(f"从 Jina AI 获取内容失败，URL: {jina_url}")
             except Exception as e:
                 logger.error(f"使用Jina AI获取内容失败: {e}")
 
+            # 如果 Jina AI 失败，尝试直接获取
+            logger.info(f"Jina AI 失败，尝试直接获取: {final_url}")
+            try:
+                async def get_direct_content():
+                    # 在任务中设置超时
+                    timeout = aiohttp.ClientTimeout(total=30)
+                    async with self.http_session.get(final_url, headers=headers, timeout=timeout) as response:
+                        if response.status != 200:
+                            logger.error(f"直接获取URL失败: {response.status}, URL: {final_url}")
+                            return None
+
+                        return await response.text()
+                
+                content = await asyncio.create_task(get_direct_content())
+                if content and len(content) > 500:  # 确保内容有足够长度
+                    logger.info(f"直接从URL获取内容成功: {final_url}, 内容长度: {len(content)}")
+                    return content
+            except Exception as e:
+                logger.warning(f"直接获取内容失败: {e}")
+
             # 尝试使用备用方法直接获取
-            return await self._fetch_url_content_direct(url)
+            return await self._fetch_url_content_direct(final_url)
         except asyncio.TimeoutError:
             logger.error(f"获取URL内容超时: URL: {url}")
             return None
@@ -144,20 +172,42 @@ class AutoSummary(PluginBase):
         """直接获取URL内容的备用方法"""
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache"
             }
-            timeout_seconds = 30
+            # 不在顶层设置超时参数
 
-            async with self.http_session.get(url, headers=headers, timeout=timeout_seconds) as response:
-                if response.status != 200:
-                    return None
+            logger.info(f"备用方法尝试获取: {url}")
+            
+            async def get_backup_content():
+                # 在任务中设置超时
+                timeout = aiohttp.ClientTimeout(total=30)
+                async with self.http_session.get(url, headers=headers, timeout=timeout, allow_redirects=True) as response:
+                    if response.status != 200:
+                        logger.warning(f"备用方法获取失败: {response.status}, URL: {url}")
+                        return None
 
-                content_type = response.headers.get('Content-Type', '')
-                if 'text/html' in content_type or 'application/json' in content_type:
-                    content = await response.text()
-                    logger.info(f"备用方法获取内容成功: {url}, 内容长度: {len(content)}")
-                    return content
-                return None
+                    content_type = response.headers.get('Content-Type', '')
+                    logger.info(f"内容类型: {content_type}")
+
+                    # 尝试获取文本内容，即使不是标准的HTML或JSON
+                    try:
+                        content = await response.text()
+                        if content and len(content) > 500:  # 确保内容有足够长度
+                            return content
+                        return None
+                    except Exception as text_error:
+                        logger.warning(f"获取文本内容失败: {text_error}")
+                        return None
+            
+            content = await asyncio.create_task(get_backup_content())
+            if content:
+                logger.info(f"备用方法获取内容成功: {url}, 内容长度: {len(content)}")
+                return content
+            return None
         except Exception as e:
             logger.error(f"备用方法获取URL内容失败: {e}")
             return None
@@ -167,21 +217,49 @@ class AutoSummary(PluginBase):
             return None
         try:
             content = content[:self.max_text_length]
+            
+            # 检查是否为GitHub个人主页
+            is_github_profile = "github.com" in content and ("overview" in content.lower() or "repositories" in content.lower())
+            
             if is_xiaohongshu:
-                prompt = f"""请对以下小红书笔记进行总结，关注以下方面：
-1. 📝 一句话概括笔记主要内容
-2. 🔑 核心要点（3-5点）
-3. 💡 作者的主要观点或建议
-4. 🏷️ 相关标签（2-3个）
+                prompt = f"""请对以下小红书笔记进行详细全面的总结，提供丰富的信息：
+1. 📝 全面概括笔记的核心内容和主旨（2-3句话）
+2. 🔑 详细的核心要点（5-7点，每点包含足够细节）
+3. 💡 作者的主要观点、方法或建议（至少3点）
+4. 💰 实用价值和可行的行动建议
+5. 🏷️ 相关标签（3-5个）
+
+请确保总结内容详尽，捕捉原文中所有重要信息，不要遗漏关键点。
+
+原文内容：
+{content}
+"""
+            elif is_github_profile:
+                prompt = f"""请对以下GitHub个人主页内容进行全面而详细的总结：
+1. 📝 开发者身份和专业领域的完整概述（3-4句话）
+2. 🔑 主要项目和贡献（列出所有可见的重要项目及其功能描述）
+3. 💻 技术栈和专业技能（尽可能详细列出所有提到的技术）
+4. 🚀 开发重点和特色项目（详细描述2-3个置顶项目）
+5. 📊 GitHub活跃度和贡献情况
+6. 🌟 个人成就和特色内容
+7. 🏷️ 技术领域标签（4-6个）
+
+请确保总结极其全面，不要遗漏任何重要细节，应包含个人简介、项目描述、技术栈等所有相关信息。
 
 原文内容：
 {content}
 """
             else:
-                prompt = f"""请对以下内容进行总结：
-1. 📝 一句话总结
-2. 🔑 关键要点（3-5点）
-3. 🏷️ 相关标签（2-3个）
+                prompt = f"""请对以下内容进行非常详细、全面的总结，确保涵盖所有重要信息：
+1. 📝 内容的完整主旨和核心内容（3-5句话）
+2. 🔑 详细的关键要点（5-8点，每点包含充分细节，不遗漏重要信息）
+3. 💡 主要观点、方法或价值（3-5点）
+4. 📋 内容结构和组织方式
+5. 🎯 目标受众和实用价值
+6. 🏷️ 相关领域标签（4-6个）
+
+请确保总结极其全面，每个要点都有足够的上下文和细节解释，不要简化或省略重要内容。
+总结应该是原始内容的完整缩影，让读者无需阅读原文也能获取所有关键信息。
 
 原文内容：
 {content}
@@ -336,7 +414,7 @@ class AutoSummary(PluginBase):
 """
 
             # 发送正在生成总结的消息
-            await bot.send_text_message(chat_id, "🔍 正在为您生成内容总结，请稍候...")
+            await bot.send_text_message(chat_id, "🔍 正在为您生成详细内容总结，请稍候...")
 
             # 调用Dify API生成总结
             is_xiaohongshu = info.get('is_xiaohongshu', False)
@@ -351,7 +429,7 @@ class AutoSummary(PluginBase):
             logger.info(f"成功生成总结，长度: {len(summary)}")
 
             # 根据卡片类型设置前缀
-            prefix = "🎯 小红书笔记总结如下" if is_xiaohongshu else "🎯 卡片内容总结如下"
+            prefix = "🎯 小红书笔记详细总结如下" if is_xiaohongshu else "🎯 卡片内容详细总结如下"
 
             # 发送总结
             await bot.send_text_message(chat_id, f"{prefix}：\n\n{summary}")
@@ -387,10 +465,10 @@ class AutoSummary(PluginBase):
                 url = self.recent_urls[chat_id]["url"]
                 logger.info(f"开始总结最近的URL: {url}")
                 try:
-                    await bot.send_text_message(chat_id, "🔍 正在为您生成内容总结，请稍候...")
+                    await bot.send_text_message(chat_id, "🔍 正在为您生成详细内容总结，请稍候...")
                     summary = await self._process_url(url)
                     if summary:
-                        await bot.send_text_message(chat_id, f"🎯 内容总结如下：\n\n{summary}")
+                        await bot.send_text_message(chat_id, f"🎯 详细内容总结如下：\n\n{summary}")
                         # 总结后删除该URL
                         del self.recent_urls[chat_id]
                         return False
@@ -426,10 +504,10 @@ class AutoSummary(PluginBase):
                     logger.info(f"在总结命令中找到URL: {url}")
                     if self._check_url(url):
                         try:
-                            await bot.send_text_message(chat_id, "🔍 正在为您生成内容总结，请稍候...")
+                            await bot.send_text_message(chat_id, "🔍 正在为您生成详细内容总结，请稍候...")
                             summary = await self._process_url(url)
                             if summary:
-                                await bot.send_text_message(chat_id, f"🎯 内容总结如下：\n\n{summary}")
+                                await bot.send_text_message(chat_id, f"🎯 详细内容总结如下：\n\n{summary}")
                                 return False
                             else:
                                 await bot.send_text_message(chat_id, "❌ 抱歉，生成总结失败")
