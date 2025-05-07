@@ -1,16 +1,43 @@
 [AutoSummary]
 enable = true
 
+# 总结命令触发词
+sum_trigger = "总结"
+
+# 追问命令触发词
+qa_trigger = "问"
+
+# 自动总结开关
+auto_sum = false
+
+# 用户黑白名单
+white_user_list = [ # 私聊白名单，列表中的用户将始终自动总结
+    "wxid_3bwotvqh1t",
+]
+
+black_user_list = []  # 私聊黑名单，列表中的用户将不会自动总结，需要手动触发
+
+# 群组黑白名单
+white_group_list = [ # 群聊白名单，列表中的群组将始终自动总结
+    "47537701753@chatroom",
+]
+
+black_group_list = []  # 群聊黑名单，列表中的群组将不会自动总结，需要手动触发
+
 [AutoSummary.Dify]
 enable = true
-api-key = "app-7r0xBzXNaBEQjBJks0N6wdJO"  # 请替换为实际的 API Key
-base-url = "http://192.168.6.19:8080/v1"  # 请替换为实际的 API URL
+api-key = "app-uLEi653DszDi5ClXqKZa"  # 请替换为实际的 API Key
+base-url = "http://192.168.1007/v1"  # 请替换为实际的 API URL
 http-proxy = ""  # 如果需要代理可以在这里设置
 
 [AutoSummary.Settings]
-max_text_length = 8000  # 最大文本长度
-black_list = [  # 黑名单URL
-    "https://support.weixin.qq.com",
-    "https://channels-aladin.wxqcloud.qq.com"
+max_text_length = 4000  # 最大文本长度
+expiration_time = 1800  # URL和卡片缓存过期时间（秒），默认30分钟
+
+# URL黑白名单
+black_url_list = [  # 黑名单URL
+    "https://support.weixin.qq.com",                 # 视频号视频
+    "https://channels-aladin.wxqcloud.qq.com"        # 视频号音乐
 ]
-white_list = []  # 白名单URL，为空则允许所有非黑名单URL
+
+white_url_list = []  # 白名单URL，为空则允许所有非黑名单URL
