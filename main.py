@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 class AutoSummary(PluginBase):
     description = "自动总结文本内容和卡片消息"
     author = "老夏的金库"
-    version = "1.2.0"
+    version = "1.3.0"
 
     URL_PATTERN = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+[-\w./?=&]*'
 
@@ -637,19 +637,31 @@ class AutoSummary(PluginBase):
                 "user": "auto_summary"
             }
             url = f"{self.dify_base_url}/chat-messages"
-            async with self.http_session.post(
-                url=url,
-                headers=headers,
-                json=payload,
-                proxy=self.http_proxy if self.http_proxy else None
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return result.get("answer", "")
-                else:
-                    error_text = await response.text()
-                    logger.error(f"调用Dify API失败: {response.status} - {error_text}")
-                    return None
+
+            # 创建一个异步任务来处理HTTP请求，并设置超时
+            async def make_request():
+                # 设置超时时间为60秒
+                timeout = aiohttp.ClientTimeout(total=60)
+                async with self.http_session.post(
+                    url=url,
+                    headers=headers,
+                    json=payload,
+                    proxy=self.http_proxy if self.http_proxy else None,
+                    timeout=timeout
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result.get("answer", "")
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"调用Dify API失败: {response.status} - {error_text}")
+                        return None
+
+            # 执行请求任务
+            return await make_request()
+        except asyncio.TimeoutError:
+            logger.error("调用Dify API超时")
+            return None
         except Exception as e:
             logger.error(f"调用Dify API时出错: {e}")
             return None
@@ -759,6 +771,9 @@ class AutoSummary(PluginBase):
                 logger.info(f"已缓存总结内容，chat_id={chat_id}, 总结长度={len(summary)}")
 
             return summary
+        except asyncio.TimeoutError:
+            logger.error(f"处理URL时超时: {url}")
+            return None
         except Exception as e:
             logger.error(f"处理URL时出错: {e}")
             return None
@@ -825,6 +840,10 @@ class AutoSummary(PluginBase):
             logger.info("总结已发送")
             return False  # 阻止后续处理
 
+        except asyncio.TimeoutError:
+            logger.error("处理卡片消息时超时")
+            await bot.send_text_message(chat_id, "❌ 抱歉，处理卡片内容时超时，请稍后再试")
+            return False
         except Exception as e:
             logger.error(f"处理卡片消息时出错: {e}")
             logger.exception(e)  # 记录完整堆栈信息
@@ -883,6 +902,10 @@ class AutoSummary(PluginBase):
                     else:
                         await bot.send_text_message(chat_id, "❌ 抱歉，无法回答您的问题")
                         return False
+                except asyncio.TimeoutError:
+                    logger.error("处理追问时超时")
+                    await bot.send_text_message(chat_id, "❌ 抱歉，处理追问过程中超时，请稍后再试")
+                    return False
                 except Exception as e:
                     logger.error(f"处理追问时出错: {e}")
                     await bot.send_text_message(chat_id, "❌ 抱歉，处理追问过程中出现错误")
@@ -939,6 +962,10 @@ class AutoSummary(PluginBase):
                         else:
                             await bot.send_text_message(chat_id, "❌ 抱歉，生成总结失败")
                             return False
+                    except asyncio.TimeoutError:
+                        logger.error("处理URL时超时")
+                        await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中超时，请稍后再试")
+                        return False
                     except Exception as e:
                         logger.error(f"处理URL时出错: {e}")
                         await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中出现错误")
@@ -971,6 +998,10 @@ class AutoSummary(PluginBase):
                     else:
                         await bot.send_text_message(chat_id, "❌ 抱歉，生成总结失败")
                         return False
+                except asyncio.TimeoutError:
+                    logger.error("处理URL时超时")
+                    await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中超时，请稍后再试")
+                    return False
                 except Exception as e:
                     logger.error(f"处理URL时出错: {e}")
                     await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中出现错误")
@@ -995,6 +1026,10 @@ class AutoSummary(PluginBase):
                     await self._handle_card_message(bot, chat_id, card_info, custom_prompt)
                     # 总结后删除该卡片
                     del self.recent_cards[chat_id]
+                    return False
+                except asyncio.TimeoutError:
+                    logger.error("处理卡片时超时")
+                    await bot.send_text_message(chat_id, "❌ 抱歉，处理过程中超时，请稍后再试")
                     return False
                 except Exception as e:
                     logger.error(f"处理卡片时出错: {e}")
